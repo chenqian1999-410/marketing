@@ -162,11 +162,23 @@ function labeledValue(section: string, labels: string[], fallback: string) {
   return fallback;
 }
 
+function scoreFromWorkflowRating(value: string) {
+  const rating = value.split(/[｜|]/)[0].replace(/\*\*/g, '').trim();
+  const numeric = rating.match(/\d{1,3}/)?.[0];
+  if (numeric) return Math.max(0, Math.min(100, Number(numeric)));
+  if (/中高|较高/.test(rating)) return 80;
+  if (/中低|较低/.test(rating)) return 50;
+  if (/高/.test(rating)) return 90;
+  if (/中/.test(rating)) return 65;
+  if (/低/.test(rating)) return 40;
+  return 0;
+}
+
 function parseMarkdownOpportunity(markdown: string, index: number, sourceInput: string): Opportunity {
   const base = BASE_OPPORTUNITIES[index] ?? BASE_OPPORTUNITIES[0];
   const combinationSection = markdownSection(markdown, '机会组合');
   const scoreSection = markdownSection(markdown, '评分拆解');
-  const reason = markdownSection(markdown, '为什么值得做');
+  const reason = markdownSection(markdown, '为什么值得做') || markdownSection(markdown, '为什么值得验证');
   const evidence = listValues(markdownSection(markdown, '证据与依据'));
   const risk = markdownSection(markdown, '主要风险');
   const nextSteps = listValues(markdownSection(markdown, '下一步验证建议'));
@@ -182,15 +194,15 @@ function parseMarkdownOpportunity(markdown: string, index: number, sourceInput: 
   ];
   const scoreLabels = [
     ['节点与时间', ['节点与时间匹配']],
-    ['用户与场景', ['用户需求/场景匹配', '用户需求/消费场景匹配', '用户需求与场景匹配', '用户与场景匹配']],
-    ['历史 Campaign', ['历史Campaign验证', '历史 Campaign 验证']],
-    ['品牌与产品', ['品牌与产品匹配']],
-    ['竞品差异', ['竞品差异化空间']],
+    ['用户与场景', ['人群/场景匹配', '人群与场景匹配', '用户需求/场景匹配', '用户需求/消费场景匹配', '用户需求与场景匹配', '用户与场景匹配']],
+    ['历史 Campaign', ['历史Campaign支持', '历史 Campaign 支持', '历史Campaign验证', '历史 Campaign 验证']],
+    ['品牌与产品', ['品牌/产品匹配', '品牌与产品匹配']],
+    ['竞品差异', ['竞品差异化', '竞品差异化空间']],
     ['执行可行性', ['执行可行性']],
   ] as const;
   const scores = scoreLabels.map(([display, labels]) => {
     const text = labeledValue(scoreSection, [...labels], '0');
-    return [display, Number(text.match(/\d{1,3}/)?.[0] ?? 0)] as [string, number];
+    return [display, scoreFromWorkflowRating(text)] as [string, number];
   });
   const firstReason = reason.replace(/\*\*/g, '').split(/\n\n|\r?\n/).find(Boolean) ?? '来自 Coze Workflow 的机会分析。';
   return {
@@ -470,7 +482,20 @@ export default function Home() {
       const stored = window.localStorage.getItem(HISTORY_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored) as unknown;
-        if (Array.isArray(parsed)) setHistory((parsed as HistoryEntry[]).slice(0, HISTORY_LIMIT));
+        if (Array.isArray(parsed)) {
+          const restored = (parsed as HistoryEntry[]).slice(0, HISTORY_LIMIT).map((entry) => ({
+            ...entry,
+            opportunities: (entry.opportunities ?? []).map((opportunity, index) => {
+              const hasEmptyScores = Array.isArray(opportunity.scores)
+                && opportunity.scores.length > 0
+                && opportunity.scores.every((score) => Number(score[1]) === 0);
+              if (!hasEmptyScores || !opportunity.raw) return opportunity;
+              const reparsed = parseMarkdownOpportunity(opportunity.raw, index, entry.brief);
+              return { ...opportunity, reason: reparsed.reason, scores: reparsed.scores };
+            }),
+          }));
+          setHistory(restored);
+        }
       }
     } catch {
       // Corrupted browser data should not prevent the workflow from loading.
