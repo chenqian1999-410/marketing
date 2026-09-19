@@ -28,6 +28,7 @@ yarn-error.log*
 
 # local environment
 .env*
+!.env.example
 coze-workflows.local.txt
 
 # deployment and generated files

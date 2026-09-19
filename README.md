@@ -1,6 +1,6 @@
 # 营销机会发现原型
 
-根据 `marketing1opp` Coze Workflow 制作的本地交互原型。
+根据新版 `marketing_1_opportunity` Coze Workflow 制作的本地交互原型。
 
 ## 已覆盖的流程
 
@@ -15,9 +15,12 @@
 ## 本地运行
 
 ```bash
+cp .env.example .env.local
 npm run dev
 ```
 
 打开 `http://localhost:3000/`。
+
+在 `.env.local` 中填入自己的 Coze PAT。当前示例配置已指向新版 `marketing_1_opportunity`（Workflow 1）与现有 `marketing_2_solution`（Workflow 2）。
 
 > 已连接已发布的 Coze Workflow 1 与 Workflow 2。Coze 不可访问时，页面会明确切换为本地动态预览；本地结果不会冒充知识库或竞品检索事实。
