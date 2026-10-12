@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowUpRight, Check, ChevronDown, Clock3, Database, Download, FileText, Lightbulb, LoaderCircle, Pencil, RotateCcw, Save, Search, Sparkles, Upload, WandSparkles, X } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronDown, Clock3, Database, Download, Expand, FileText, Lightbulb, LoaderCircle, Pencil, RotateCcw, Save, Search, Sparkles, Upload, WandSparkles, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
@@ -347,11 +348,41 @@ function buildLocalCampaignPlans(opportunity: Opportunity, userFeedback: string)
 
 function parseCampaignPlan(source: string): CampaignPlan | null {
   try {
-    const parsed = JSON.parse(source) as CampaignPlan;
-    return parsed?.title ? parsed : null;
+    let parsed: unknown = source;
+    for (let depth = 0; depth < 3 && typeof parsed === 'string'; depth += 1) parsed = JSON.parse(parsed);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const record = parsed as Record<string, unknown>;
+    if (typeof record.title !== 'string' || !record.title.trim()) return null;
+    const fields: (keyof CampaignPlan)[] = ['title', 'type', 'target_user', 'strategy', 'execution', 'channel', 'budget', 'metrics', 'risk'];
+    return Object.fromEntries(fields.map((key) => [key, typeof record[key] === 'string' ? record[key] : ''])) as CampaignPlan;
   } catch {
     return null;
   }
+}
+
+const CAMPAIGN_SECTIONS: { key: keyof CampaignPlan; label: string }[] = [
+  { key: 'target_user', label: '目标人群' },
+  { key: 'strategy', label: '核心策略' },
+  { key: 'execution', label: '执行玩法' },
+  { key: 'channel', label: '传播渠道' },
+  { key: 'budget', label: '预算规划' },
+  { key: 'metrics', label: '衡量指标' },
+  { key: 'risk', label: '风险与应对' },
+];
+
+function CampaignDocument({ source, compact = false }: { source: string; compact?: boolean }) {
+  const plan = parseCampaignPlan(source);
+  if (!plan) return <div className="campaign-document-fallback">{source}</div>;
+  const sections = compact ? CAMPAIGN_SECTIONS.filter(({ key }) => ['target_user', 'strategy', 'execution'].includes(key)) : CAMPAIGN_SECTIONS;
+  return <div className={`campaign-document ${compact ? 'compact' : ''}`}>
+    <header className="campaign-document-heading">
+      {plan.type && <span>{plan.type}</span>}
+      <h3>{plan.title}</h3>
+    </header>
+    {sections.map(({ key, label }) => plan[key] && <section className="campaign-document-section" key={key}>
+      <h4>{label}</h4><p>{plan[key]}</p>
+    </section>)}
+  </div>;
 }
 
 function buildFinalCampaign(planSource: string, opportunity: Opportunity, opinion: string) {
@@ -407,6 +438,7 @@ export default function Home() {
   const [campaignResult, setCampaignResult] = useState('');
   const [campaignError, setCampaignError] = useState('');
   const [campaignPlans, setCampaignPlans] = useState<string[]>([]);
+  const [previewCampaignIndex, setPreviewCampaignIndex] = useState<number | null>(null);
   const [campaignSelected, setCampaignSelected] = useState<number | null>(null);
   const [campaignOpinion, setCampaignOpinion] = useState('');
   const [workflow2Event, setWorkflow2Event] = useState<{ eventId: string; interruptType: number } | null>(null);
@@ -954,7 +986,11 @@ export default function Home() {
                       </div>}
                     </div>
                     {campaignNotice && <div className="run-notice"><strong>本地动态运行</strong><span>{campaignNotice}</span></div>}
-                    {campaignPlans.length > 0 && !campaignResult && <div className="campaign-plan-grid">{campaignPlans.slice(0, 3).map((plan, index) => <article className={campaignSelected === index ? 'active' : ''} key={index}><span>PLAN 0{index + 1}</span><pre>{plan}</pre><Button variant={campaignSelected === index ? 'default' : 'outline'} onClick={() => chooseCampaignPlan(index)} disabled={campaignLoading}>{campaignSelected === index ? '已选择' : '选择方案'}</Button></article>)}</div>}
+                    {campaignPlans.length > 0 && !campaignResult && <div className="campaign-plan-grid">{campaignPlans.slice(0, 3).map((plan, index) => <article className={campaignSelected === index ? 'active' : ''} key={index}>
+                      <div className="campaign-plan-card-top"><span>PLAN 0{index + 1}</span><button type="button" onClick={() => setPreviewCampaignIndex(index)} aria-label={`放大预览方案 ${index + 1}`}><Expand size={15} />放大预览</button></div>
+                      <button type="button" className="campaign-plan-preview" onClick={() => setPreviewCampaignIndex(index)} aria-label={`预览方案 ${index + 1} 全文`}><CampaignDocument source={plan} compact /></button>
+                      <Button variant={campaignSelected === index ? 'default' : 'outline'} onClick={() => chooseCampaignPlan(index)} disabled={campaignLoading}>{campaignSelected === index ? '已选择' : '选择方案'}</Button>
+                    </article>)}</div>}
                     {campaignSelected !== null && (campaignMode === 'preview' || workflow2Event) && !campaignResult && <div className="campaign-opinion"><label htmlFor="campaign-opinion">对所选 Campaign 的修改意见 <span>没有意见可留空</span></label><Textarea id="campaign-opinion" value={campaignOpinion} onChange={(event) => setCampaignOpinion(event.target.value)} placeholder="例如：降低预算、强化门店执行、调整核心指标……" /><Button onClick={finishCampaignPlan} disabled={campaignLoading}>{campaignLoading ? '正在生成…' : '生成最终执行方案'}</Button></div>}
                     {campaignError && <pre>{campaignError}</pre>}
                     {campaignResult && (campaignEditing ? <div className="campaign-editor-wrap"><label htmlFor="campaign-editor">编辑完整方案</label><Textarea id="campaign-editor" value={campaignDraft} onChange={(event) => setCampaignDraft(event.target.value)} className="campaign-editor" /><p>修改完成后请先保存，再下载最终 Word 文档。</p></div> : <pre>{campaignResult}</pre>)}
@@ -965,6 +1001,18 @@ export default function Home() {
           </section>
         )}
       </section>
+
+      <Dialog open={previewCampaignIndex !== null} onOpenChange={(open) => { if (!open) setPreviewCampaignIndex(null); }}>
+        <DialogContent className="campaign-preview-dialog">
+          <DialogHeader className="campaign-preview-header">
+            <span className="results-kicker">WORKFLOW 2 / DOCUMENT PREVIEW</span>
+            <DialogTitle>方案 {previewCampaignIndex === null ? '' : String(previewCampaignIndex + 1).padStart(2, '0')} · 完整预览</DialogTitle>
+            <DialogDescription>阅读完整方案后，可在下方选择此方案。</DialogDescription>
+          </DialogHeader>
+          <div className="campaign-preview-body">{previewCampaignIndex !== null && campaignPlans[previewCampaignIndex] && <CampaignDocument source={campaignPlans[previewCampaignIndex]} />}</div>
+          <div className="campaign-preview-footer"><Button variant="outline" onClick={() => setPreviewCampaignIndex(null)}>关闭预览</Button><Button onClick={() => { if (previewCampaignIndex !== null) void chooseCampaignPlan(previewCampaignIndex); setPreviewCampaignIndex(null); }} disabled={campaignLoading}>选择此方案</Button></div>
+        </DialogContent>
+      </Dialog>
 
       {evidenceIndex !== null && <div className="evidence-overlay" role="presentation" onMouseDown={() => setEvidenceIndex(null)}><aside className="evidence-sheet" role="dialog" aria-modal="true" aria-labelledby="evidence-title" onMouseDown={(event) => event.stopPropagation()}><button className="sheet-close" aria-label="关闭证据" onClick={() => setEvidenceIndex(null)}><X size={18} /></button><header className="sheet-header"><span className="results-kicker">EVIDENCE TRACE</span><h2 id="evidence-title">{opportunities[evidenceIndex].title}</h2><p>将事实、弱参考和推断分开呈现。</p></header><div className="sheet-body"><h4>为什么值得做</h4><p>{opportunities[evidenceIndex].reason}</p><h4>证据与依据</h4><ul>{opportunities[evidenceIndex].evidence.map((item) => <li key={item}>{item}</li>)}</ul><h4>评分拆解</h4><div className="score-list">{opportunities[evidenceIndex].scores.map(([label, value]) => <div key={label as string}><span>{label}</span><div><i style={{ width: `${value}%` }} /></div><strong>{value}</strong></div>)}</div></div></aside></div>}
     </main>
